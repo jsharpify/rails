@@ -3,6 +3,7 @@
 require "active_support/deprecator"
 require "active_support/test_case"
 require "active_support/testing/autorun"
+require "minitest/mock"
 require "rails/test_unit/test_parser"
 
 class TestParserTestFixture < ActiveSupport::TestCase
@@ -69,5 +70,30 @@ class TestParserTest < ActiveSupport::TestCase
     ]
 
     assert_equal expected, actual
+  end
+
+  def test_parser_only_parses_file_once
+    method_used_to_cache_result = :test_method
+    another_test_in_fixture = :test_oneline
+
+    cached_parsed_result = Rails::TestUnit::TestParser.definition_for(
+      TestParserTestFixture.instance_method(method_used_to_cache_result)
+    )
+
+    prism_calls = 0
+    original_parse_file = Prism.method(:parse_file)
+    Prism.stub(:parse_file, ->(file) { prism_calls += 1; original_parse_file.call(file) }) do
+      same_method_result = Rails::TestUnit::TestParser.definition_for(
+        TestParserTestFixture.instance_method(method_used_to_cache_result)
+      )
+      different_method_result = Rails::TestUnit::TestParser.definition_for(
+        TestParserTestFixture.instance_method(another_test_in_fixture)
+      )
+
+      assert_equal 0, prism_calls
+      assert_equal cached_parsed_result, same_method_result
+      assert_equal cached_parsed_result.first, different_method_result.first
+      assert_not_equal cached_parsed_result.last, different_method_result.last
+    end
   end
 end
